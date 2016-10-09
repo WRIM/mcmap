@@ -1,9 +1,9 @@
 # if you don't want png support, remove "-DWITHPNG", "-lpng" and "draw_png.cpp" below
 CC=g++
-CFLAGS=-O3 -msse -c -Wall -fomit-frame-pointer -pedantic -DWITHPNG -I/usr/local/include
-LDFLAGS=-O3 -msse -lz -lpng -fomit-frame-pointer -L/usr/local/lib
-DCFLAGS=-g -O0 -c -Wall -D_DEBUG -DWITHPNG -I/usr/local/include
-DLDFLAGS=-g -O0 -lz -lpng -L/usr/local/lib
+CFLAGS=-O3 -msse -c -Wall -fomit-frame-pointer -pedantic -DWITHPNG -I/usr/local/include -I/opt/local/include
+LDFLAGS=-O3 -msse -lz -lpng -fomit-frame-pointer -L/usr/local/lib -L/opt/local/lib
+DCFLAGS=-g -O0 -c -Wall -D_DEBUG -DWITHPNG -I/usr/local/include -I/opt/local/include
+DLDFLAGS=-g -O0 -lz -lpng -L/usr/local/lib -L/opt/local/lib
 SOURCES=main.cpp helper.cpp nbt.cpp colors.cpp worldloader.cpp filesystem.cpp globals.cpp draw_png.cpp extractcolors.cpp pngreader.cpp
 OBJECTS=$(SOURCES:.cpp=.default.o)
 OBJECTS_TURBO=$(SOURCES:.cpp=.turbo.o)
