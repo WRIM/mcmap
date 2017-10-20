@@ -66,6 +66,31 @@ static const inline int floorChunkX(const int val);
 static const inline int floorChunkZ(const int val);
 void printHelp(char *binary);
 
+enum parseReturns {
+	Success,
+	Fail,
+	Return
+};
+
+struct parsedOptions {
+	parseReturns result;
+
+	bool wholeworld;
+	char* filename;
+	char* outfile;
+	char* colorfile;
+	char* texturefile;
+	char* infoFile;
+	bool dumpColors;
+	bool infoOnly;
+	bool end;
+	char* biomepath;
+	uint64_t memlimit;
+	bool memlimitSet;
+};
+
+parsedOptions parseArgs(int argc, char** argv);
+
 int main(int argc, char **argv)
 {
 	// ########## command line parsing ##########
@@ -73,233 +98,57 @@ int main(int argc, char **argv)
 		printHelp(argv[0]);
 		return 1;
 	}
-	bool wholeworld = false;
-	char *filename = NULL, *outfile = NULL, *colorfile = NULL, *texturefile = NULL, *infoFile = NULL;
-	bool dumpColors = false, infoOnly = false, end = false;
-	char *biomepath = NULL;
-	uint64_t memlimit;
-	if (sizeof(size_t) < 8) {
-		memlimit = 1500 * uint64_t(1024 * 1024);
-	} else {
-		memlimit = 2000 * uint64_t(1024 * 1024);
-	}
-	bool memlimitSet = false;
 
-	// First, for the sake of backward compatibility, try to parse command line arguments the old way first
-	if (argc >= 7
-	      && isNumeric(argv[1]) && isNumeric(argv[2]) && isNumeric(argv[3]) && isNumeric(argv[4])) {     // Specific area of world
-		g_FromChunkX = atoi(argv[1]);
-		g_FromChunkZ = atoi(argv[2]);
-		g_ToChunkX	= atoi(argv[3]) + 1;
-		g_ToChunkZ	= atoi(argv[4]) + 1;
-		g_MapsizeY = atoi(argv[5]);
-		filename = argv[6];
-		if (argc > 7) {
-			g_Nightmode = (atoi(argv[7]) == 1);
-			g_Underground = (atoi(argv[7]) == 2);
-		}
-	} else if (argc == 3 && isNumeric(argv[2])) {  // Whole world - old way
-		filename = argv[1];
-		g_Nightmode = (atoi(argv[2]) == 1);
-		g_Underground = (atoi(argv[2]) == 2);
-	} else { // -- New command line parsing --
-#		define MOREARGS(x) (argpos + (x) < argc)
-#		define NEXTARG argv[++argpos]
-#		define POLLARG(x) argv[argpos + (x)]
-		int argpos = 0;
-		while (MOREARGS(1)) {
-			const char *option = NEXTARG;
-			if (strcmp(option, "-from") == 0) {
-				if (!MOREARGS(2) || !isNumeric(POLLARG(1)) || !isNumeric(POLLARG(2))) {
-					printf("Error: %s needs two integer arguments, ie: %s -10 5\n", option, option);
-					return 1;
-				}
-				g_FromChunkX = atoi(NEXTARG);
-				g_FromChunkZ = atoi(NEXTARG);
-			} else if (strcmp(option, "-to") == 0) {
-				if (!MOREARGS(2) || !isNumeric(POLLARG(1)) || !isNumeric(POLLARG(2))) {
-					printf("Error: %s needs two integer arguments, ie: %s -5 20\n", option, option);
-					return 1;
-				}
-				g_ToChunkX = atoi(NEXTARG) + 1;
-				g_ToChunkZ = atoi(NEXTARG) + 1;
-			} else if (strcmp(option, "-night") == 0) {
-				g_Nightmode = true;
-			} else if (strcmp(option, "-cave") == 0 || strcmp(option, "-caves") == 0 || strcmp(option, "-underground") == 0) {
-				g_Underground = true;
-			} else if (strcmp(option, "-blendcave") == 0 || strcmp(option, "-blendcaves") == 0) {
-				g_BlendUnderground = true;
-			} else if (strcmp(option, "-skylight") == 0) {
-				g_Skylight = true;
-			} else if (strcmp(option, "-nether") == 0 || strcmp(option, "-hell") == 0 || strcmp(option, "-slip") == 0) {
-				g_Hell = true;
-			} else if (strcmp(option, "-end") == 0) {
-				end = true;
-			} else if (strcmp(option, "-nowater") == 0) {
-				g_NoWater = true;
-			} else if (strcmp(option, "-serverhell") == 0) {
-				g_ServerHell = true;
-			} else if (strcmp(option, "-biomes") == 0) {
-				g_UseBiomes = true;
-			} else if (strcmp(option, "-biomecolors") == 0) {
-				if (!MOREARGS(1)) {
-					printf("Error: %s needs path to grasscolor.png and foliagecolor.png, ie: %s ./subdir\n", option, option);
-					return 1;
-				}
-				g_UseBiomes = true;
-				biomepath = NEXTARG;
-			} else if (strcmp(option, "-png") == 0) {
-				// void
-			} else if (strcmp(option, "-blendall") == 0) {
-				g_BlendAll = true;
-			} else if (strcmp(option, "-noise") == 0 || strcmp(option, "-dither") == 0) {
-				if (!MOREARGS(1) || !isNumeric(POLLARG(1))) {
-					printf("Error: %s needs an integer argument, ie: %s 10\n", option, option);
-					return 1;
-				}
-				g_Noise = atoi(NEXTARG);
-			} else if (strcmp(option, "-height") == 0 || strcmp(option, "-max") == 0) {
-				if (!MOREARGS(1) || !isNumeric(POLLARG(1))) {
-					printf("Error: %s needs an integer argument, ie: %s 100\n", option, option);
-					return 1;
-				}
-				g_MapsizeY = atoi(NEXTARG);
-				if (strcmp(option, "-max") == 0) g_MapsizeY++;
-			} else if (strcmp(option, "-min") == 0) {
-				if (!MOREARGS(1) || !isNumeric(POLLARG(1))) {
-					printf("Error: %s needs an integer argument, ie: %s 50\n", option, option);
-					return 1;
-				}
-				g_MapminY = atoi(NEXTARG);
-			} else if (strcmp(option, "-mem") == 0) {
-				if (!MOREARGS(1) || !isNumeric(POLLARG(1)) || atoi(POLLARG(1)) <= 0) {
-					printf("Error: %s needs a positive integer argument, ie: %s 1000\n", option, option);
-					return 1;
-				}
-				memlimitSet = true;
-				memlimit = size_t (atoi(NEXTARG)) * size_t (1024 * 1024);
-			} else if (strcmp(option, "-file") == 0) {
-				if (!MOREARGS(1)) {
-					printf("Error: %s needs one argument, ie: %s myworld.bmp\n", option, option);
-					return 1;
-				}
-				outfile = NEXTARG;
-			} else if (strcmp(option, "-colors") == 0) {
-				if (!MOREARGS(1)) {
-					printf("Error: %s needs one argument, ie: %s colors.txt\n", option, option);
-					return 1;
-				}
-				colorfile = NEXTARG;
-			} else if (strcmp(option, "-texture") == 0) {
-				if (!MOREARGS(1)) {
-					printf("Error: %s needs one argument, ie: %s terrain.png\n", option, option);
-					return 1;
-				}
-				texturefile = NEXTARG;
-			} else if (strcmp(option, "-info") == 0) {
-				if (!MOREARGS(1)) {
-					printf("Error: %s needs one argument, ie: %s data.json\n", option, option);
-					return 1;
-				}
-				infoFile = NEXTARG;
-			} else if (strcmp(option, "-infoonly") == 0) {
-				infoOnly = true;
-			} else if (strcmp(option, "-dumpcolors") == 0) {
-				dumpColors = true;
-			} else if (strcmp(option, "-north") == 0) {
-				g_Orientation = North;
-			} else if (strcmp(option, "-south") == 0) {
-				g_Orientation = South;
-			} else if (strcmp(option, "-east") == 0) {
-				g_Orientation = East;
-			} else if (strcmp(option, "-west") == 0) {
-				g_Orientation = West;
-			} else if (strcmp(option, "-3") == 0) {
-				g_OffsetY = 3;
-			} else if (strcmp(option, "-split") == 0) {
-				if (!MOREARGS(1)) {
-					printf("Error: %s needs a path argument, ie: %s tiles/\n", option, option);
-					return 1;
-				}
-				g_TilePath = NEXTARG;
-			} else if (strcmp(option, "-help") == 0 || strcmp(option, "-h") == 0 || strcmp(option, "-?") == 0) {
-				printHelp(argv[0]);
-				return 0;
-			} else if (strcmp(option, "-marker") == 0) {
-				if (g_MarkerCount >= MAX_MARKERS) {
-					printf("Too many markers, ignoring additional ones\n");
-					continue;
-				}
-				if (!MOREARGS(3) || !isNumeric(POLLARG(2)) || !isNumeric(POLLARG(3))) {
-					printf("Error: %s needs a char and two integer arguments, ie: %s r -15 240\n", option, option);
-					return 1;
-				}
-				Marker &marker = g_Markers[g_MarkerCount];
-				switch (*NEXTARG) {
-				case 'r':
-					marker.color = 253;
-					break;
-				case 'g':
-					marker.color = 244;
-					break;
-				case 'b':
-					marker.color = 242;
-					break;
-				default:
-					marker.color = 35;
-				}
-				int x = atoi(NEXTARG);
-				int z = atoi(NEXTARG);
-				marker.chunkX = floorChunkX(x);
-				marker.chunkZ = floorChunkZ(z);
-				marker.offsetX = x - (marker.chunkX * CHUNKSIZE_X);
-				marker.offsetZ = z - (marker.chunkZ * CHUNKSIZE_Z);
-				g_MarkerCount++;
-            } else if (strcmp(option, "-mystcraftage") == 0) {
-                if (!MOREARGS(1)) {
-                    printf("Error: %s needs an integer age number argument", option);
-                    return 1;
-                }
-                g_MystCraftAge = atoi(NEXTARG);
-			} else {
-				filename = (char *) option;
-			}
-		}
-		wholeworld = (g_FromChunkX == UNDEFINED || g_ToChunkX == UNDEFINED);
+	parsedOptions ops = parseArgs(argc, argv);
+
+	if (ops.result == Fail) {
+		return 1;
+	} else if (ops.result == Return) {
+		return 0;
 	}
+	ops.memlimitSet = false;
+
+	
+	if (sizeof(size_t) < 8) {
+		ops.memlimit = 1500 * uint64_t(1024 * 1024);
+	} else {
+		ops.memlimit = 2000 * uint64_t(1024 * 1024);
+	}
+	
+
 	// ########## end of command line parsing ##########
-	if (g_Hell || g_ServerHell || end) g_UseBiomes = false;
+	if (g_Hell || g_ServerHell || ops.end) g_UseBiomes = false;
 
 	printf("mcmap " VERSION " %dbit by Zahl\n", 8*sizeof(size_t));
 
-	if (sizeof(size_t) < 8 && memlimit > 1800 * uint64_t(1024 * 1024)) {
-		memlimit = 1800 * uint64_t(1024 * 1024);
+	if (sizeof(size_t) < 8 && ops.memlimit > 1800 * uint64_t(1024 * 1024)) {
+		ops.memlimit = 1800 * uint64_t(1024 * 1024);
 	}
 
 	// Load colormap from file
 	loadColors(); // Default base, in case some are missing in colors.txt (if used)
 	// Load files from colors.txt
-	if (colorfile != NULL && fileExists(colorfile)) {
-		if (!loadColorsFromFile(colorfile)) {
-			printf("Error loading colors from %s: Opening failed.\n", colorfile);
+	if (ops.colorfile != NULL && fileExists(ops.colorfile)) {
+		if (!loadColorsFromFile(ops.colorfile)) {
+			printf("Error loading colors from %s: Opening failed.\n", ops.colorfile);
 			return 1;
 		}
-	} else if (colorfile != NULL) {
-		printf("Error loading colors from %s: File not found.\n", colorfile);
+	} else if (ops.colorfile != NULL) {
+		printf("Error loading colors from %s: File not found.\n", ops.colorfile);
 		return 1;
 	}
 	// Extract colors from terrain.png
-	if (texturefile != NULL && fileExists(texturefile)) {
-		if (!extractColors(texturefile)) {
-			printf("Error extracting colors from %s: Opening failed (not a valid terrain png?).\n", texturefile);
+	if (ops.texturefile != NULL && fileExists(ops.texturefile)) {
+		if (!extractColors(ops.texturefile)) {
+			printf("Error extracting colors from %s: Opening failed (not a valid terrain png?).\n", ops.texturefile);
 			return 1;
 		}
-	} else if (texturefile != NULL) {
-		printf("Error loading colors from %s: File not found.\n", texturefile);
+	} else if (ops.texturefile != NULL) {
+		printf("Error loading colors from %s: File not found.\n", ops.texturefile);
 		return 1;
 	}
 	// If colors should be dumped to file, exit afterwards
-	if (dumpColors) {
+	if (ops.dumpColors) {
 		if (!dumpColorsToFile("defaultcolors.txt")) {
 			printf("Could not dump colors to defaultcolors.txt, error opening file.\n");
 			return 1;
@@ -308,43 +157,43 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	if (filename == NULL) {
+	if (ops.filename == NULL) {
 		printf("Error: No world given. Please add the path to your world to the command line.\n");
 		return 1;
 	}
-	if (!isAlphaWorld(filename)) {
+	if (!isAlphaWorld(ops.filename)) {
 		printf("Error: Given path does not contain a Minecraft world.\n");
 		return 1;
 	}
 	if (g_Hell) {
-		char *tmp = new char[strlen(filename) + 20];
-		strcpy(tmp, filename);
+		char *tmp = new char[strlen(ops.filename) + 20];
+		strcpy(tmp, ops.filename);
 		strcat(tmp, "/DIM-1");
 		if (!dirExists(tmp)) {
 			printf("Error: This world does not have a hell world yet. Build a portal first!\n");
 			return 1;
 		}
-		filename = tmp;
-	} else if (end) {
-		char *tmp = new char[strlen(filename) + 20];
-		strcpy(tmp, filename);
+		ops.filename = tmp;
+	} else if (ops.end) {
+		char *tmp = new char[strlen(ops.filename) + 20];
+		strcpy(tmp, ops.filename);
 		strcat(tmp, "/DIM1");
 		if (!dirExists(tmp)) {
 			printf("Error: This world does not have an end-world yet. Find an ender portal first!\n");
 			return 1;
 		}
-		filename = tmp;
+		ops.filename = tmp;
 	} else if (g_MystCraftAge) {
-        char *tmp = new char[strlen(filename) + 20];
-        sprintf(tmp, "%s/DIM_MYST%d", filename, g_MystCraftAge);
+        char *tmp = new char[strlen(ops.filename) + 20];
+        sprintf(tmp, "%s/DIM_MYST%d", ops.filename, g_MystCraftAge);
 		if (!dirExists(tmp)) {
 			printf("Error: This world does not have Age %d!\n", g_MystCraftAge);
 			return 1;
 		}
-        filename = tmp;
+        ops.filename = tmp;
     }
 	// Figure out whether this is the old save format or McRegion or Anvil
-	g_WorldFormat = getWorldFormat(filename);
+	g_WorldFormat = getWorldFormat(ops.filename);
 
 	if (g_WorldFormat < 2) {
 		if (g_MapsizeY > CHUNKSIZE_Y) {
@@ -354,8 +203,8 @@ int main(int argc, char **argv)
 			g_MapminY = CHUNKSIZE_Y;
 		}
 	}
-	if (wholeworld && !scanWorldDirectory(filename)) {
-		printf("Error accessing terrain at '%s'\n", filename);
+	if (ops.wholeworld && !scanWorldDirectory(ops.filename)) {
+		printf("Error accessing terrain at '%s'\n", ops.filename);
 		return 1;
 	}
 	if (g_ToChunkX <= g_FromChunkX || g_ToChunkZ <= g_FromChunkZ) {
@@ -377,25 +226,25 @@ int main(int argc, char **argv)
 	g_TotalToChunkX = g_ToChunkX;
 	g_TotalToChunkZ = g_ToChunkZ;
 	// Don't allow ridiculously small values for big maps
-	if (memlimit && memlimit < 200000000 && memlimit < size_t(g_MapsizeX * g_MapsizeZ * 150000)) {
+	if (ops.memlimit && ops.memlimit < 200000000 && ops.memlimit < size_t(g_MapsizeX * g_MapsizeZ * 150000)) {
 		printf("Need at least %d MiB of RAM to render a map of that size.\n", int(float(g_MapsizeX) * g_MapsizeZ * .15f + 1));
 		return 1;
 	}
 
 	// Load biomes
 	if (g_UseBiomes) {
-		char *bpath = new char[strlen(filename) + 30];
-		strcpy(bpath, filename);
+		char *bpath = new char[strlen(ops.filename) + 30];
+		strcpy(bpath, ops.filename);
 		strcat(bpath, "/biomes");
 		if (!dirExists(bpath)) {
 			printf("Error loading biome information. '%s' does not exist.\n", bpath);
 			return 1;
 		}
-		if (biomepath == NULL) {
-			biomepath = bpath;
+		if (ops.biomepath == NULL) {
+			ops.biomepath = bpath;
 		}
-		if (!loadBiomeColors(biomepath)) return 1;
-		biomepath = bpath;
+		if (!loadBiomeColors(ops.biomepath)) return 1;
+		ops.biomepath = bpath;
 	}
 
 	// Mem check
@@ -403,35 +252,35 @@ int main(int argc, char **argv)
 	uint64_t bitmapBytes = calcImageSize(g_ToChunkX - g_FromChunkX, g_ToChunkZ - g_FromChunkZ, g_MapsizeY, bitmapX, bitmapY, false);
 	// Cropping
 	int cropLeft = 0, cropRight = 0, cropTop = 0, cropBottom = 0;
-	if (wholeworld) {
+	if (ops.wholeworld) {
 		calcBitmapOverdraw(cropLeft, cropRight, cropTop, cropBottom);
 		bitmapX -= (cropLeft + cropRight);
 		bitmapY -= (cropTop + cropBottom);
 		bitmapBytes = uint64_t(bitmapX) * BYTESPERPIXEL * uint64_t(bitmapY);
 	}
 
-	if (infoFile != NULL) {
-		writeInfoFile(infoFile,
+	if (ops.infoFile != NULL) {
+		writeInfoFile(ops.infoFile,
 				-cropLeft,
 				-cropTop,
 				bitmapX, bitmapY);
-		infoFile = NULL;
-		if (infoOnly) exit(0);
+		ops.infoFile = NULL;
+		if (ops.infoOnly) exit(0);
 	}
 
 	bool splitImage = false;
 	int numSplitsX = 0;
 	int numSplitsZ = 0;
-	if (memlimit && memlimit < bitmapBytes + calcTerrainSize(g_ToChunkX - g_FromChunkX, g_ToChunkZ - g_FromChunkZ)) {
+	if (ops.memlimit && ops.memlimit < bitmapBytes + calcTerrainSize(g_ToChunkX - g_FromChunkX, g_ToChunkZ - g_FromChunkZ)) {
 		// If we'd need more mem than allowed, we have to render groups of chunks...
-		if (memlimit < bitmapBytes + 220 * uint64_t(1024 * 1024)) {
+		if (ops.memlimit < bitmapBytes + 220 * uint64_t(1024 * 1024)) {
 			// Warn about using incremental rendering if user didn't set limit manually
-			if (!memlimitSet && sizeof(size_t) > 4) {
+			if (!ops.memlimitSet && sizeof(size_t) > 4) {
 				printf(" ***** PLEASE NOTE *****\n"
 				       "mcmap is using disk cached rendering as it has a default memory limit\n"
 				       "of %d MiB. If you want to use more memory to render (=faster) use\n"
 				       "the -mem switch followed by the amount of memory in MiB to use.\n"
-				       "Start mcmap without any arguments to get more help.\n", int(memlimit / (1024 * 1024)));
+				       "Start mcmap without any arguments to get more help.\n", int(ops.memlimit / (1024 * 1024)));
 			} else {
 				printf("Choosing disk caching strategy...\n");
 			}
@@ -443,9 +292,9 @@ int main(int argc, char **argv)
 			int subAreaX = ((g_TotalToChunkX - g_TotalFromChunkX) + (numSplitsX - 1)) / numSplitsX;
 			int subAreaZ = ((g_TotalToChunkZ - g_TotalFromChunkZ) + (numSplitsZ - 1)) / numSplitsZ;
 			int subBitmapX, subBitmapY;
-			if (splitImage && calcImageSize(subAreaX, subAreaZ, g_MapsizeY, subBitmapX, subBitmapY, true) + calcTerrainSize(subAreaX, subAreaZ) <= memlimit) {
+			if (splitImage && calcImageSize(subAreaX, subAreaZ, g_MapsizeY, subBitmapX, subBitmapY, true) + calcTerrainSize(subAreaX, subAreaZ) <= ops.memlimit) {
 				break; // Found a suitable partitioning
-			} else if (!splitImage && bitmapBytes + calcTerrainSize(subAreaX, subAreaZ) <= memlimit) {
+			} else if (!splitImage && bitmapBytes + calcTerrainSize(subAreaX, subAreaZ) <= ops.memlimit) {
 				break; // Found a suitable partitioning
 			}
 			//
@@ -460,17 +309,17 @@ int main(int argc, char **argv)
 	// Always same random seed, as this is only used for block noise, which should give the same result for the same input every time
 	srand(1337);
 
-	if (outfile == NULL) {
-		outfile = (char *) "output.png";
+	if (ops.outfile == NULL) {
+		ops.outfile = (char *) "output.png";
 	}
 
 	// open output file only if not doing the tiled output
 	FILE *fileHandle = NULL;
 	if (g_TilePath == NULL) {
-		fileHandle = fopen(outfile, (splitImage ? "w+b" : "wb"));
+		fileHandle = fopen(ops.outfile, (splitImage ? "w+b" : "wb"));
 
 		if (fileHandle == NULL) {
-			printf("Error opening '%s' for writing.\n", outfile);
+			printf("Error opening '%s' for writing.\n", ops.outfile);
 			return 1;
 		}
 
@@ -542,13 +391,13 @@ int main(int argc, char **argv)
 		}
 
 		// Load world or part of world
-		if (numSplitsX == 0 && wholeworld && !loadEntireTerrain()) {
-			printf("Error loading terrain from '%s'\n", filename);
+		if (numSplitsX == 0 && ops.wholeworld && !loadEntireTerrain()) {
+			printf("Error loading terrain from '%s'\n", ops.filename);
 			return 1;
-		} else if (numSplitsX != 0 || !wholeworld) {
+		} else if (numSplitsX != 0 || !ops.wholeworld) {
 			int numberOfChunks;
-			if (!loadTerrain(filename, numberOfChunks)) {
-				printf("Error loading terrain from '%s'\n", filename);
+			if (!loadTerrain(ops.filename, numberOfChunks)) {
+				printf("Error loading terrain from '%s'\n", ops.filename);
 				return 1;
 			}
 			if (splitImage && numberOfChunks == 0) {
@@ -564,7 +413,7 @@ int main(int argc, char **argv)
 
 		// Load biome data if requested
 		if (g_UseBiomes) {
-			loadBiomeMap(biomepath);
+			loadBiomeMap(ops.biomepath);
 		}
 
 		// If underground mode, remove blocks that don't seem to belong to caves
@@ -667,13 +516,13 @@ int main(int argc, char **argv)
 		// Underground overlay mode
 		if (g_BlendUnderground && !g_Underground) {
 			// Load map data again, since block culling removed most of the blocks
-			if (numSplitsX == 0 && wholeworld && !loadEntireTerrain()) {
-				printf("Error loading terrain from '%s'\n", filename);
+			if (numSplitsX == 0 && ops.wholeworld && !loadEntireTerrain()) {
+				printf("Error loading terrain from '%s'\n", ops.filename);
 				return 1;
-			} else if (numSplitsX != 0 || !wholeworld) {
+			} else if (numSplitsX != 0 || !ops.wholeworld) {
 				int i;
-				if (!loadTerrain(filename, i)) {
-					printf("Error loading terrain from '%s'\n", filename);
+				if (!loadTerrain(ops.filename, i)) {
+					printf("Error loading terrain from '%s'\n", ops.filename);
 					return 1;
 				}
 			}
@@ -724,6 +573,217 @@ int main(int argc, char **argv)
 
 	printf("Job complete.\n");
 	return 0;
+}
+
+parsedOptions parseArgs(int argc, char** argv) {
+	bool wholeworld = false;
+	char *filename = NULL, *outfile = NULL, *colorfile = NULL, *texturefile = NULL, *infoFile = NULL;
+	bool dumpColors = false, infoOnly = false, end = false;
+	char *biomepath = NULL;
+
+	int result = 0;
+
+	parsedOptions out;
+	out.result = Fail;
+
+	// First, for the sake of backward compatibility, try to parse command line arguments the old way first
+	if (argc >= 7
+	      && isNumeric(argv[1]) && isNumeric(argv[2]) && isNumeric(argv[3]) && isNumeric(argv[4])) {     // Specific area of world
+		g_FromChunkX = atoi(argv[1]);
+		g_FromChunkZ = atoi(argv[2]);
+		g_ToChunkX	= atoi(argv[3]) + 1;
+		g_ToChunkZ	= atoi(argv[4]) + 1;
+		g_MapsizeY = atoi(argv[5]);
+		filename = argv[6];
+		if (argc > 7) {
+			g_Nightmode = (atoi(argv[7]) == 1);
+			g_Underground = (atoi(argv[7]) == 2);
+		}
+	} else if (argc == 3 && isNumeric(argv[2])) {  // Whole world - old way
+		filename = argv[1];
+		g_Nightmode = (atoi(argv[2]) == 1);
+		g_Underground = (atoi(argv[2]) == 2);
+	} else { // -- New command line parsing --
+#		define MOREARGS(x) (argpos + (x) < argc)
+#		define NEXTARG argv[++argpos]
+#		define POLLARG(x) argv[argpos + (x)]
+		int argpos = 0;
+		while (MOREARGS(1)) {
+			const char *option = NEXTARG;
+			if (strcmp(option, "-from") == 0) {
+				if (!MOREARGS(2) || !isNumeric(POLLARG(1)) || !isNumeric(POLLARG(2))) {
+					printf("Error: %s needs two integer arguments, ie: %s -10 5\n", option, option);
+					return out;
+				}
+				g_FromChunkX = atoi(NEXTARG);
+				g_FromChunkZ = atoi(NEXTARG);
+			} else if (strcmp(option, "-to") == 0) {
+				if (!MOREARGS(2) || !isNumeric(POLLARG(1)) || !isNumeric(POLLARG(2))) {
+					printf("Error: %s needs two integer arguments, ie: %s -5 20\n", option, option);
+					return out;
+				}
+				g_ToChunkX = atoi(NEXTARG) + 1;
+				g_ToChunkZ = atoi(NEXTARG) + 1;
+			} else if (strcmp(option, "-night") == 0) {
+				g_Nightmode = true;
+			} else if (strcmp(option, "-cave") == 0 || strcmp(option, "-caves") == 0 || strcmp(option, "-underground") == 0) {
+				g_Underground = true;
+			} else if (strcmp(option, "-blendcave") == 0 || strcmp(option, "-blendcaves") == 0) {
+				g_BlendUnderground = true;
+			} else if (strcmp(option, "-skylight") == 0) {
+				g_Skylight = true;
+			} else if (strcmp(option, "-nether") == 0 || strcmp(option, "-hell") == 0 || strcmp(option, "-slip") == 0) {
+				g_Hell = true;
+			} else if (strcmp(option, "-end") == 0) {
+				end = true;
+			} else if (strcmp(option, "-nowater") == 0) {
+				g_NoWater = true;
+			} else if (strcmp(option, "-serverhell") == 0) {
+				g_ServerHell = true;
+			} else if (strcmp(option, "-biomes") == 0) {
+				g_UseBiomes = true;
+			} else if (strcmp(option, "-biomecolors") == 0) {
+				if (!MOREARGS(1)) {
+					printf("Error: %s needs path to grasscolor.png and foliagecolor.png, ie: %s ./subdir\n", option, option);
+					return out;
+				}
+				g_UseBiomes = true;
+				biomepath = NEXTARG;
+			} else if (strcmp(option, "-png") == 0) {
+				// void
+			} else if (strcmp(option, "-blendall") == 0) {
+				g_BlendAll = true;
+			} else if (strcmp(option, "-noise") == 0 || strcmp(option, "-dither") == 0) {
+				if (!MOREARGS(1) || !isNumeric(POLLARG(1))) {
+					printf("Error: %s needs an integer argument, ie: %s 10\n", option, option);
+					return out;
+				}
+				g_Noise = atoi(NEXTARG);
+			} else if (strcmp(option, "-height") == 0 || strcmp(option, "-max") == 0) {
+				if (!MOREARGS(1) || !isNumeric(POLLARG(1))) {
+					printf("Error: %s needs an integer argument, ie: %s 100\n", option, option);
+					return out;
+				}
+				g_MapsizeY = atoi(NEXTARG);
+				if (strcmp(option, "-max") == 0) g_MapsizeY++;
+			} else if (strcmp(option, "-min") == 0) {
+				if (!MOREARGS(1) || !isNumeric(POLLARG(1))) {
+					printf("Error: %s needs an integer argument, ie: %s 50\n", option, option);
+					return out;
+				}
+				g_MapminY = atoi(NEXTARG);
+			} else if (strcmp(option, "-mem") == 0) {
+				if (!MOREARGS(1) || !isNumeric(POLLARG(1)) || atoi(POLLARG(1)) <= 0) {
+					printf("Error: %s needs a positive integer argument, ie: %s 1000\n", option, option);
+					return out;
+				}
+				out.memlimitSet = true;
+				out.memlimit = size_t (atoi(NEXTARG)) * size_t (1024 * 1024);
+			} else if (strcmp(option, "-file") == 0) {
+				if (!MOREARGS(1)) {
+					printf("Error: %s needs one argument, ie: %s myworld.bmp\n", option, option);
+					return out;
+				}
+				outfile = NEXTARG;
+			} else if (strcmp(option, "-colors") == 0) {
+				if (!MOREARGS(1)) {
+					printf("Error: %s needs one argument, ie: %s colors.txt\n", option, option);
+					return out;
+				}
+				colorfile = NEXTARG;
+			} else if (strcmp(option, "-texture") == 0) {
+				if (!MOREARGS(1)) {
+					printf("Error: %s needs one argument, ie: %s terrain.png\n", option, option);
+					return out;
+				}
+				texturefile = NEXTARG;
+			} else if (strcmp(option, "-info") == 0) {
+				if (!MOREARGS(1)) {
+					printf("Error: %s needs one argument, ie: %s data.json\n", option, option);
+					return out;
+				}
+				infoFile = NEXTARG;
+			} else if (strcmp(option, "-infoonly") == 0) {
+				infoOnly = true;
+			} else if (strcmp(option, "-dumpcolors") == 0) {
+				dumpColors = true;
+			} else if (strcmp(option, "-north") == 0) {
+				g_Orientation = North;
+			} else if (strcmp(option, "-south") == 0) {
+				g_Orientation = South;
+			} else if (strcmp(option, "-east") == 0) {
+				g_Orientation = East;
+			} else if (strcmp(option, "-west") == 0) {
+				g_Orientation = West;
+			} else if (strcmp(option, "-3") == 0) {
+				g_OffsetY = 3;
+			} else if (strcmp(option, "-split") == 0) {
+				if (!MOREARGS(1)) {
+					printf("Error: %s needs a path argument, ie: %s tiles/\n", option, option);
+					return out;
+				}
+				g_TilePath = NEXTARG;
+			} else if (strcmp(option, "-help") == 0 || strcmp(option, "-h") == 0 || strcmp(option, "-?") == 0) {
+				printHelp(argv[0]);
+				out.result = Return;
+				return out;
+			} else if (strcmp(option, "-marker") == 0) {
+				if (g_MarkerCount >= MAX_MARKERS) {
+					printf("Too many markers, ignoring additional ones\n");
+					continue;
+				}
+				if (!MOREARGS(3) || !isNumeric(POLLARG(2)) || !isNumeric(POLLARG(3))) {
+					printf("Error: %s needs a char and two integer arguments, ie: %s r -15 240\n", option, option);
+					return out;
+				}
+				Marker &marker = g_Markers[g_MarkerCount];
+				switch (*NEXTARG) {
+				case 'r':
+					marker.color = 253;
+					break;
+				case 'g':
+					marker.color = 244;
+					break;
+				case 'b':
+					marker.color = 242;
+					break;
+				default:
+					marker.color = 35;
+				}
+				int x = atoi(NEXTARG);
+				int z = atoi(NEXTARG);
+				marker.chunkX = floorChunkX(x);
+				marker.chunkZ = floorChunkZ(z);
+				marker.offsetX = x - (marker.chunkX * CHUNKSIZE_X);
+				marker.offsetZ = z - (marker.chunkZ * CHUNKSIZE_Z);
+				g_MarkerCount++;
+            } else if (strcmp(option, "-mystcraftage") == 0) {
+                if (!MOREARGS(1)) {
+                    printf("Error: %s needs an integer age number argument", option);
+                    return out;
+                }
+                g_MystCraftAge = atoi(NEXTARG);
+			} else {
+				filename = (char *) option;
+			}
+		}
+		wholeworld = (g_FromChunkX == UNDEFINED || g_ToChunkX == UNDEFINED);
+	}
+
+	out.result = Success;
+
+	out.wholeworld = wholeworld;
+	out.filename = filename;
+	out.outfile = outfile;
+	out.colorfile = colorfile;
+	out.texturefile = texturefile;
+	out.infoFile = infoFile;
+	out.dumpColors = dumpColors;
+	out.infoOnly = infoOnly;
+	out.end = end;
+	out.biomepath = biomepath;
+	
+	return out;
 }
 
 #ifdef _DEBUG
