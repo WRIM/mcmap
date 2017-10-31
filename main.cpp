@@ -103,6 +103,7 @@ FILE* determineFileHandle(parsedOptions&, bool, int, int);
 void checkWorldDims();
 void setMapSize();
 void makeTilePath();
+void splitUpRendering(int&, int&, bool, uint64_t, parsedOptions&);
 
 
 int main(int argc, char **argv)
@@ -183,6 +184,41 @@ int main(int argc, char **argv)
 	bool splitImage = false;
 	int numSplitsX = 0;
 	int numSplitsZ = 0;
+	splitUpRendering(numSplitsX, numSplitsZ, splitImage, bitmapBytes, ops);
+	// Always same random seed, as this is only used for block noise, which should give the same result for the same input every time
+	srand(1337);
+
+	if (ops.outfile == NULL) {
+		ops.outfile = (char *) "output.png";
+	}
+
+	// open output file only if not doing the tiled output
+	FILE *fileHandle = determineFileHandle(ops, splitImage, bitmapX, bitmapY);
+	// Precompute brightness adjustment factor
+	float *brightnessLookup = computeBrightnessLookup();
+
+	// Now here's the loop rendering all the required parts of the image.
+	// All the vars previously used to define bounds will be set on each loop,
+	// to create something like a virtual window inside the map.
+	while (!renderPartOfMap(splitImage, numSplitsX, numSplitsZ, cropLeft, cropRight, cropTop, brightnessLookup, ops));
+
+	// Drawing complete, now either just save the image or compose it if disk caching was used
+	// Saving
+	if (!splitImage) {
+		saveImage();
+	} else {
+		if (!composeFinalImage()) {
+			printf("Aborted.\n");
+			return 1;
+		}
+	}
+	if (fileHandle != NULL) fclose(fileHandle);
+
+	printf("Job complete.\n");
+	return 0;
+}
+
+void splitUpRendering(int& numSplitsX, int& numSplitsZ, bool splitImage, uint64_t bitmapBytes, parsedOptions& ops) {
 	if (ops.memlimit && ops.memlimit < bitmapBytes + calcTerrainSize(g_ToChunkX - g_FromChunkX, g_ToChunkZ - g_FromChunkZ)) {
 		// If we'd need more mem than allowed, we have to render groups of chunks...
 		if (ops.memlimit < bitmapBytes + 220 * uint64_t(1024 * 1024)) {
@@ -217,38 +253,6 @@ int main(int argc, char **argv)
 			}
 		}
 	}
-
-	// Always same random seed, as this is only used for block noise, which should give the same result for the same input every time
-	srand(1337);
-
-	if (ops.outfile == NULL) {
-		ops.outfile = (char *) "output.png";
-	}
-
-	// open output file only if not doing the tiled output
-	FILE *fileHandle = determineFileHandle(ops, splitImage, bitmapX, bitmapY);
-	// Precompute brightness adjustment factor
-	float *brightnessLookup = computeBrightnessLookup();
-
-	// Now here's the loop rendering all the required parts of the image.
-	// All the vars previously used to define bounds will be set on each loop,
-	// to create something like a virtual window inside the map.
-	while (!renderPartOfMap(splitImage, numSplitsX, numSplitsZ, cropLeft, cropRight, cropTop, brightnessLookup, ops));
-
-	// Drawing complete, now either just save the image or compose it if disk caching was used
-	// Saving
-	if (!splitImage) {
-		saveImage();
-	} else {
-		if (!composeFinalImage()) {
-			printf("Aborted.\n");
-			return 1;
-		}
-	}
-	if (fileHandle != NULL) fclose(fileHandle);
-
-	printf("Job complete.\n");
-	return 0;
 }
 
 FILE* determineFileHandle(parsedOptions& ops, bool splitImage, int bitmapX, int bitmapY) {
