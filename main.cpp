@@ -72,7 +72,7 @@ enum parseReturns {
 	Return
 };
 
-struct parsedOptions {
+struct options {
 	parseReturns result;
 
 	bool wholeworld;
@@ -89,43 +89,30 @@ struct parsedOptions {
 	bool memlimitSet;
 };
 
-parsedOptions parseArgs(int argc, char** argv);
-int renderPartOfMap(bool&, int&, int&, int&, int&, int&, float*, parsedOptions&);
+options parseArgs(int argc, char** argv);
+int renderPartOfMap(bool&, int&, int&, int&, int&, int&, float*, options&);
 
-void checkColorFile(parsedOptions&);
-void checkTextureFile(parsedOptions&);
-void checkDumpColors(parsedOptions&);
-void loadFullWorldPath(parsedOptions&);
-void useBiomes(parsedOptions& ops);
+void checkColorFile(options&);
+void checkTextureFile(options&);
+void checkDumpColors(options&);
+void loadFullWorldPath(options&);
+void useBiomes(options& ops);
 void setMapBounds();
 float* computeBrightnessLookup();
-FILE* determineFileHandle(parsedOptions&, bool, int, int);
+FILE* determineFileHandle(options&, bool, int, int);
 void checkWorldDims();
 void setMapSize();
 void makeTilePath();
-void splitUpRendering(int&, int&, bool, uint64_t, parsedOptions&);
+void splitUpRendering(int&, int&, bool&, uint64_t&, options&);
 
 
 int main(int argc, char **argv)
 {
-	parsedOptions ops = parseArgs(argc, argv);
+	options ops = parseArgs(argc, argv);
 
-	ops.memlimitSet = false;
-
-	if (sizeof(size_t) < 8) {
-		ops.memlimit = 1500 * uint64_t(1024 * 1024);
-	} else {
-		ops.memlimit = 2000 * uint64_t(1024 * 1024);
-	}
-	
-	// ########## end of command line parsing ##########
 	if (g_Hell || g_ServerHell || ops.end) g_UseBiomes = false;
 
 	printf("mcmap " VERSION " %dbit by Zahl\n", 8*sizeof(size_t));
-
-	if (sizeof(size_t) < 8 && ops.memlimit > 1800 * uint64_t(1024 * 1024)) {
-		ops.memlimit = 1800 * uint64_t(1024 * 1024);
-	}
 
 	// Load colormap from file
 	loadColors(); // Default base, in case some are missing in colors.txt (if used)
@@ -141,11 +128,12 @@ int main(int argc, char **argv)
 	g_WorldFormat = getWorldFormat(ops.filename);
 	setMapSize();
 
-	checkWorldDims();
 	if (ops.wholeworld && !scanWorldDirectory(ops.filename)) {
 		printf("Error accessing terrain at '%s'\n", ops.filename);
 		return 1;
 	}
+
+	checkWorldDims();
 
 	setMapBounds();
 
@@ -218,7 +206,7 @@ int main(int argc, char **argv)
 	return 0;
 }
 
-void splitUpRendering(int& numSplitsX, int& numSplitsZ, bool splitImage, uint64_t bitmapBytes, parsedOptions& ops) {
+void splitUpRendering(int& numSplitsX, int& numSplitsZ, bool& splitImage, uint64_t& bitmapBytes, options& ops) {
 	if (ops.memlimit && ops.memlimit < bitmapBytes + calcTerrainSize(g_ToChunkX - g_FromChunkX, g_ToChunkZ - g_FromChunkZ)) {
 		// If we'd need more mem than allowed, we have to render groups of chunks...
 		if (ops.memlimit < bitmapBytes + 220 * uint64_t(1024 * 1024)) {
@@ -255,7 +243,7 @@ void splitUpRendering(int& numSplitsX, int& numSplitsZ, bool splitImage, uint64_
 	}
 }
 
-FILE* determineFileHandle(parsedOptions& ops, bool splitImage, int bitmapX, int bitmapY) {
+FILE* determineFileHandle(options& ops, bool splitImage, int bitmapX, int bitmapY) {
 	FILE* fileHandle = NULL;
 	if (g_TilePath == NULL) {
 		fileHandle = fopen(ops.outfile, (splitImage ? "w+b" : "wb"));
@@ -291,7 +279,7 @@ void makeTilePath() {
 		}
 }
 
-void checkColorFile(parsedOptions& ops) {
+void checkColorFile(options& ops) {
 	if (ops.colorfile != NULL && fileExists(ops.colorfile)) {
 		if (!loadColorsFromFile(ops.colorfile)) {
 			printf("Error loading colors from %s: Opening failed.\n", ops.colorfile);
@@ -303,7 +291,7 @@ void checkColorFile(parsedOptions& ops) {
 	}
 }
 
-void checkTextureFile(parsedOptions& ops) {
+void checkTextureFile(options& ops) {
 	// Extract colors from terrain.png
 	if (ops.texturefile != NULL && fileExists(ops.texturefile)) {
 		if (!extractColors(ops.texturefile)) {
@@ -316,7 +304,7 @@ void checkTextureFile(parsedOptions& ops) {
 	}
 }
 
-void checkDumpColors(parsedOptions& ops) {
+void checkDumpColors(options& ops) {
 	// If colors should be dumped to file, exit afterwards
 	if (ops.dumpColors) {
 		if (!dumpColorsToFile("defaultcolors.txt")) {
@@ -324,10 +312,11 @@ void checkDumpColors(parsedOptions& ops) {
 			exit(1);
 		}
 		printf("Colors written to defaultcolors.txt\n");
+		exit(0);
 	}
 }
 
-void loadFullWorldPath(parsedOptions& ops) {
+void loadFullWorldPath(options& ops) {
 	if (ops.filename == NULL) {
 		printf("Error: No world given. Please add the path to your world to the command line.\n");
 		exit(1);
@@ -397,7 +386,7 @@ void setMapBounds() {
 	g_TotalToChunkZ = g_ToChunkZ;
 }
 
-void useBiomes(parsedOptions& ops) {
+void useBiomes(options& ops) {
 	char *bpath = new char[strlen(ops.filename) + 30];
 	strcpy(bpath, ops.filename);
 	strcat(bpath, "/biomes");
@@ -422,12 +411,12 @@ void setMapSize() {
 		}
 	}
 }
-int renderPartOfMap(bool& splitImage, int& numSplitsX, int& numSplitsZ, int& cropLeft, int& cropRight, int& cropTop, float* brightnessLookup, parsedOptions& ops) {
+int renderPartOfMap(bool& splitImage, int& numSplitsX, int& numSplitsZ, int& cropLeft, int& cropRight, int& cropTop, float* brightnessLookup, options& ops) {
 	int bitmapStartX = 3, bitmapStartY = 5;
 	if (numSplitsX) { // virtual window is set here
 		// Set current chunk bounds according to number of splits. returns true if everything has been rendered already
 		if (prepareNextArea(numSplitsX, numSplitsZ, bitmapStartX, bitmapStartY)) {
-			return 2;
+			return 1;
 		}
 		// if image is split up, prepare memory block for next part
 		if (splitImage) {
@@ -630,17 +619,25 @@ int renderPartOfMap(bool& splitImage, int& numSplitsX, int& numSplitsZ, int& cro
 	}
 	return 0;
 }
-parsedOptions parseArgs(int argc, char** argv) {
+options parseArgs(int argc, char** argv) {
 	bool wholeworld = false;
 	char *filename = NULL, *outfile = NULL, *colorfile = NULL, *texturefile = NULL, *infoFile = NULL;
 	bool dumpColors = false, infoOnly = false, end = false;
 	char *biomepath = NULL;
 
-	parsedOptions out;
+	options out;
 
 	if (argc < 2) {
 		printHelp(argv[0]);
 		exit(1);
+	}
+
+	out.memlimitSet = false;
+
+	if (sizeof(size_t) < 8) {
+		out.memlimit = 1500 * uint64_t(1024 * 1024);
+	} else {
+		out.memlimit = 2000 * uint64_t(1024 * 1024);
 	}
 
 	// First, for the sake of backward compatibility, try to parse command line arguments the old way first
@@ -824,6 +821,11 @@ parsedOptions parseArgs(int argc, char** argv) {
 			}
 		}
 		wholeworld = (g_FromChunkX == UNDEFINED || g_ToChunkX == UNDEFINED);
+	}
+
+
+	if (sizeof(size_t) < 8 && out.memlimit > 1800 * uint64_t(1024 * 1024)) {
+		out.memlimit = 1800 * uint64_t(1024 * 1024);
 	}
 
 	out.wholeworld = wholeworld;
