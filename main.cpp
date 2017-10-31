@@ -90,7 +90,7 @@ struct options {
 };
 
 options parseArgs(int argc, char** argv);
-int renderPartOfMap(bool&, int&, int&, int&, int&, int&, float*, options&);
+bool renderPartOfMap(bool&, int&, int&, int&, int&, int&, float*, options&);
 
 void checkColorFile(options&);
 void checkTextureFile(options&);
@@ -411,12 +411,12 @@ void setMapSize() {
 		}
 	}
 }
-int renderPartOfMap(bool& splitImage, int& numSplitsX, int& numSplitsZ, int& cropLeft, int& cropRight, int& cropTop, float* brightnessLookup, options& ops) {
+bool renderPartOfMap(bool& splitImage, int& numSplitsX, int& numSplitsZ, int& cropLeft, int& cropRight, int& cropTop, float* brightnessLookup, options& ops) {
 	int bitmapStartX = 3, bitmapStartY = 5;
 	if (numSplitsX) { // virtual window is set here
 		// Set current chunk bounds according to number of splits. returns true if everything has been rendered already
 		if (prepareNextArea(numSplitsX, numSplitsZ, bitmapStartX, bitmapStartY)) {
-			return 1;
+			return true;
 		}
 		// if image is split up, prepare memory block for next part
 		if (splitImage) {
@@ -428,7 +428,7 @@ int renderPartOfMap(bool& splitImage, int& numSplitsX, int& numSplitsZ, int& cro
 			if (res == -1) {
 				printf("Error loading partial image to render to.\n");
 				exit(1);
-			} else if (res == 1) return 0;
+			} else if (res == 1) return false;
 		}
 	}
 
@@ -462,7 +462,7 @@ int renderPartOfMap(bool& splitImage, int& numSplitsX, int& numSplitsZ, int& cro
 		if (splitImage && numberOfChunks == 0) {
 			printf("Section is empty, skipping...\n");
 			discardImagePart();
-			return 0;
+			return false;
 		}
 	}
 
@@ -522,7 +522,7 @@ int renderPartOfMap(bool& splitImage, int& numSplitsX, int& numSplitsZ, int& cro
 				bmpPosY -= g_OffsetY;
 				uint8_t &c = BLOCKAT(x, y, z);
 				if (c == AIR) {
-					return 0;
+					break;
 				}
 				//float col = float(y) * .78f - 91;
 				float brightnessAdjustment = brightnessLookup[y];
@@ -615,9 +615,9 @@ int renderPartOfMap(bool& splitImage, int& numSplitsX, int& numSplitsZ, int& cro
 	}
 	// No incremental rendering at all, so quit the loop
 	if (numSplitsX == 0) {
-		return 2;
+		return true;
 	}
-	return 0;
+	return false;
 }
 options parseArgs(int argc, char** argv) {
 	bool wholeworld = false;
