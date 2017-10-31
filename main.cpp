@@ -36,6 +36,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <stdexcept>
 #ifdef _DEBUG
 #include <cassert>
 #endif
@@ -108,6 +109,7 @@ void splitUpRendering(int&, int&, bool&, uint64_t&, options&);
 
 int main(int argc, char **argv)
 {
+	try {
 	options ops = parseArgs(argc, argv);
 
 	if (g_Hell || g_ServerHell || ops.end) g_UseBiomes = false;
@@ -203,6 +205,11 @@ int main(int argc, char **argv)
 	if (fileHandle != NULL) fclose(fileHandle);
 
 	printf("Job complete.\n");
+
+	} catch (std::runtime_error& e) {
+		printf("%s", e.what());
+		exit(1);
+	}
 	return 0;
 }
 
@@ -249,14 +256,12 @@ FILE* determineFileHandle(options& ops, bool splitImage, int bitmapX, int bitmap
 		fileHandle = fopen(ops.outfile, (splitImage ? "w+b" : "wb"));
 
 		if (fileHandle == NULL) {
-			printf("Error opening '%s' for writing.\n", ops.outfile);
-			exit(1);
+			throw std::runtime_error("Error opening '" + std::string(ops.outfile) + "' for writing.\n");
 		}
 
 		// This writes out the bitmap header and pre-allocates space if disk caching is used
 		if (!createImage(fileHandle, bitmapX, bitmapY, splitImage)) {
-			printf("Error allocating bitmap. Check if you have enough free disk space.\n");
-			exit(1);
+			throw std::runtime_error("Error allocating bitmap. Check if you have enough free disk space.\n");
 		}
 	} else {
 		makeTilePath();
@@ -274,20 +279,17 @@ void makeTilePath() {
 		mkdir(g_TilePath, 0755);
 #endif
 		if (!dirExists(g_TilePath)) {
-			printf("Error: '%s' does not exist.\n", g_TilePath);
-			exit(1);
+			throw std::runtime_error("Error: '" + std::string(g_TilePath) + " does not exist.\n");
 		}
 }
 
 void checkColorFile(options& ops) {
 	if (ops.colorfile != NULL && fileExists(ops.colorfile)) {
 		if (!loadColorsFromFile(ops.colorfile)) {
-			printf("Error loading colors from %s: Opening failed.\n", ops.colorfile);
-			exit(1);
+			throw std::runtime_error("Error loading colors from " + std::string(ops.colorfile) + " Opening failed.\n");
 		}
 	} else if (ops.colorfile != NULL) {
-		printf("Error loading colors from %s: File not found.\n", ops.colorfile);
-		exit(1);
+		throw std::runtime_error("Error loading colors from " + std::string(ops.colorfile) + " File not found.\n");
 	}
 }
 
@@ -295,12 +297,10 @@ void checkTextureFile(options& ops) {
 	// Extract colors from terrain.png
 	if (ops.texturefile != NULL && fileExists(ops.texturefile)) {
 		if (!extractColors(ops.texturefile)) {
-			printf("Error extracting colors from %s: Opening failed (not a valid terrain png?).\n", ops.texturefile);
-			exit(1);
+			throw std::runtime_error("Error extracting colors from " + std::string(ops.texturefile) + " Opening failed (not a valid terrain png?).\n");
 		}
 	} else if (ops.texturefile != NULL) {
-		printf("Error loading colors from %s: File not found.\n", ops.texturefile);
-		exit(1);
+		throw std::runtime_error("Error loading colors from " + std::string(ops.texturefile) + ": File not found.\n");
 	}
 }
 
@@ -308,8 +308,7 @@ void checkDumpColors(options& ops) {
 	// If colors should be dumped to file, exit afterwards
 	if (ops.dumpColors) {
 		if (!dumpColorsToFile("defaultcolors.txt")) {
-			printf("Could not dump colors to defaultcolors.txt, error opening file.\n");
-			exit(1);
+			throw std::runtime_error("Could not dump colors to defaultcolors.txt, error opening file.\n");
 		}
 		printf("Colors written to defaultcolors.txt\n");
 		exit(0);
@@ -318,20 +317,17 @@ void checkDumpColors(options& ops) {
 
 void loadFullWorldPath(options& ops) {
 	if (ops.filename == NULL) {
-		printf("Error: No world given. Please add the path to your world to the command line.\n");
-		exit(1);
+		throw std::runtime_error("Error: No world given. Please add the path to your world to the command line.\n");
 	}
 	if (!isAlphaWorld(ops.filename)) {
-		printf("Error: Given path does not contain a Minecraft world.\n");
-		exit(1);
+		throw std::runtime_error("Error: Given path does not contain a Minecraft world.\n");
 	}
 	if (g_Hell) {
 		char *tmp = new char[strlen(ops.filename) + 20];
 		strcpy(tmp, ops.filename);
 		strcat(tmp, "/DIM-1");
 		if (!dirExists(tmp)) {
-			printf("Error: This world does not have a hell world yet. Build a portal first!\n");
-			exit(1);
+			throw std::runtime_error("Error: This world does not have a hell world yet. Build a portal first!\n");
 		}
 		ops.filename = tmp;
 	} else if (ops.end) {
@@ -339,8 +335,7 @@ void loadFullWorldPath(options& ops) {
 		strcpy(tmp, ops.filename);
 		strcat(tmp, "/DIM1");
 		if (!dirExists(tmp)) {
-			printf("Error: This world does not have an end-world yet. Find an ender portal first!\n");
-			exit(1);
+			throw std::runtime_error("Error: This world does not have an end-world yet. Find an ender portal first!\n");
 		}
 		ops.filename = tmp;
 	} else if (g_MystCraftAge) {
@@ -364,12 +359,10 @@ float* computeBrightnessLookup() {
 
 void checkWorldDims() {
 	if (g_ToChunkX <= g_FromChunkX || g_ToChunkZ <= g_FromChunkZ) {
-		printf("Nothing to render: -from X Z has to be <= -to X Z\n");
-		exit(1);
+		throw std::runtime_error("Nothing to render: -from X Z has to be <= -to X Z\n");
 	}
 	if (g_MapsizeY - g_MapminY < 1) {
-		printf("Nothing to render: -min Y has to be < -max/-height Y\n");
-		exit(1);
+		throw std::runtime_error("Nothing to render: -min Y has to be < -max/-height Y\n");
 	}
 }
 
@@ -391,8 +384,7 @@ void useBiomes(options& ops) {
 	strcpy(bpath, ops.filename);
 	strcat(bpath, "/biomes");
 	if (!dirExists(bpath)) {
-		printf("Error loading biome information. '%s' does not exist.\n", bpath);
-		exit(1);
+		throw std::runtime_error("Error loading biome information. '" + std::string(bpath) + "' does not exist.\n");
 	}
 	if (ops.biomepath == NULL) {
 		ops.biomepath = bpath;
@@ -426,8 +418,7 @@ bool renderPartOfMap(bool& splitImage, int& numSplitsX, int& numSplitsZ, int& cr
 			if (sizex <= 0 || sizey <= 0) return 0; // Don't know if this is right, might also be that the size calulation is plain wrong
 			int res = loadImagePart(bitmapStartX - cropLeft, bitmapStartY - cropTop, sizex, sizey);
 			if (res == -1) {
-				printf("Error loading partial image to render to.\n");
-				exit(1);
+				throw std::runtime_error("Error loading partial image to render to.\n");
 			} else if (res == 1) return false;
 		}
 	}
@@ -451,13 +442,11 @@ bool renderPartOfMap(bool& splitImage, int& numSplitsX, int& numSplitsZ, int& cr
 
 	// Load world or part of world
 	if (numSplitsX == 0 && ops.wholeworld && !loadEntireTerrain()) {
-		printf("Error loading terrain from '%s'\n", ops.filename);
-		exit(1);
+		throw std::runtime_error("Error loading terrain from '" + std::string(ops.filename) + "'\n");
 	} else if (numSplitsX != 0 || !ops.wholeworld) {
 		int numberOfChunks;
 		if (!loadTerrain(ops.filename, numberOfChunks)) {
-			printf("Error loading terrain from '%s'\n", ops.filename);
-			exit(1);
+			throw std::runtime_error("Error loading terrain from '" + std::string(ops.filename) + "'\n");
 		}
 		if (splitImage && numberOfChunks == 0) {
 			printf("Section is empty, skipping...\n");
@@ -576,13 +565,11 @@ bool renderPartOfMap(bool& splitImage, int& numSplitsX, int& numSplitsZ, int& cr
 	if (g_BlendUnderground && !g_Underground) {
 		// Load map data again, since block culling removed most of the blocks
 		if (numSplitsX == 0 && ops.wholeworld && !loadEntireTerrain()) {
-			printf("Error loading terrain from '%s'\n", ops.filename);
-			exit(1);
+			throw std::runtime_error("Error loading terrain from '" + std::string(ops.filename) + "'\n");
 		} else if (numSplitsX != 0 || !ops.wholeworld) {
 			int i;
 			if (!loadTerrain(ops.filename, i)) {
-				printf("Error loading terrain from '%s'\n", ops.filename);
-				exit(1);
+				throw std::runtime_error("Error loading terrain from '" + std::string(ops.filename) + "'\n");
 			}
 		}
 		undergroundMode(true);
@@ -610,8 +597,7 @@ bool renderPartOfMap(bool& splitImage, int& numSplitsX, int& numSplitsZ, int& cr
 	} // End blend-underground
 	// If disk caching is used, save part to disk
 	if (splitImage && !saveImagePart()) {
-		printf("Error saving partially rendered image.\n");
-		exit(1);
+		throw std::runtime_error("Error saving partially rendered image.\n");
 	}
 	// No incremental rendering at all, so quit the loop
 	if (numSplitsX == 0) {
@@ -666,15 +652,13 @@ options parseArgs(int argc, char** argv) {
 			const char *option = NEXTARG;
 			if (strcmp(option, "-from") == 0) {
 				if (!MOREARGS(2) || !isNumeric(POLLARG(1)) || !isNumeric(POLLARG(2))) {
-					printf("Error: %s needs two integer arguments, ie: %s -10 5\n", option, option);
-					return out;
+					throw std::runtime_error("Error:" + std::string(option) + " needs two integer arguments, ie: " + std::string(option) + " -10 5\n");
 				}
 				g_FromChunkX = atoi(NEXTARG);
 				g_FromChunkZ = atoi(NEXTARG);
 			} else if (strcmp(option, "-to") == 0) {
 				if (!MOREARGS(2) || !isNumeric(POLLARG(1)) || !isNumeric(POLLARG(2))) {
-					printf("Error: %s needs two integer arguments, ie: %s -5 20\n", option, option);
-					exit(1);
+					throw std::runtime_error("Error:" + std::string(option) + " needs two integer arguments, ie: " + std::string(option) + " -10 5\n");
 				}
 				g_ToChunkX = atoi(NEXTARG) + 1;
 				g_ToChunkZ = atoi(NEXTARG) + 1;
@@ -698,8 +682,7 @@ options parseArgs(int argc, char** argv) {
 				g_UseBiomes = true;
 			} else if (strcmp(option, "-biomecolors") == 0) {
 				if (!MOREARGS(1)) {
-					printf("Error: %s needs path to grasscolor.png and foliagecolor.png, ie: %s ./subdir\n", option, option);
-					exit(1);
+					throw std::runtime_error("Error: " + std::string(option) + " needs path to grasscolor.png and foliagecolor.png, ie: " + std::string(option) + " ./subdir\n");
 				}
 				g_UseBiomes = true;
 				biomepath = NEXTARG;
@@ -709,52 +692,44 @@ options parseArgs(int argc, char** argv) {
 				g_BlendAll = true;
 			} else if (strcmp(option, "-noise") == 0 || strcmp(option, "-dither") == 0) {
 				if (!MOREARGS(1) || !isNumeric(POLLARG(1))) {
-					printf("Error: %s needs an integer argument, ie: %s 10\n", option, option);
-					exit(1);
+					throw std::runtime_error("Error: " + std::string(option) + " needs an integer argument, ie: " + std::string(option) + " 10\n");
 				}
 				g_Noise = atoi(NEXTARG);
 			} else if (strcmp(option, "-height") == 0 || strcmp(option, "-max") == 0) {
 				if (!MOREARGS(1) || !isNumeric(POLLARG(1))) {
-					printf("Error: %s needs an integer argument, ie: %s 100\n", option, option);
-					exit(1);
+					throw std::runtime_error("Error: %s" + std::string(option) + " needs an integer argument, ie: %s" + std::string(option) + " 100\n");
 				}
 				g_MapsizeY = atoi(NEXTARG);
 				if (strcmp(option, "-max") == 0) g_MapsizeY++;
 			} else if (strcmp(option, "-min") == 0) {
 				if (!MOREARGS(1) || !isNumeric(POLLARG(1))) {
-					printf("Error: %s needs an integer argument, ie: %s 50\n", option, option);
-					exit(1);
+					throw std::runtime_error("Error: " + std::string(option) + "%s needs an integer argument, ie: " + std::string(option) + "%s 50\n");
 				}
 				g_MapminY = atoi(NEXTARG);
 			} else if (strcmp(option, "-mem") == 0) {
 				if (!MOREARGS(1) || !isNumeric(POLLARG(1)) || atoi(POLLARG(1)) <= 0) {
-					printf("Error: %s needs a positive integer argument, ie: %s 1000\n", option, option);
-					exit(1);
+					throw std::runtime_error("Error: " + std::string(option) + "%s needs a positive integer argument, ie: " + std::string(option) + "%s 1000\n");
 				}
 				out.memlimitSet = true;
 				out.memlimit = size_t (atoi(NEXTARG)) * size_t (1024 * 1024);
 			} else if (strcmp(option, "-file") == 0) {
 				if (!MOREARGS(1)) {
-					printf("Error: %s needs one argument, ie: %s myworld.bmp\n", option, option);
-					exit(1);
+					throw std::runtime_error("Error:" + std::string(option) + " %s needs one argument, ie: " + std::string(option) + "%s myworld.bmp\n");
 				}
 				outfile = NEXTARG;
 			} else if (strcmp(option, "-colors") == 0) {
 				if (!MOREARGS(1)) {
-					printf("Error: %s needs one argument, ie: %s colors.txt\n", option, option);
-					exit(1);
+					throw std::runtime_error("Error: " + std::string(option) + "%s needs one argument, ie: " + std::string(option) + "%s colors.txt\n");
 				}
 				colorfile = NEXTARG;
 			} else if (strcmp(option, "-texture") == 0) {
 				if (!MOREARGS(1)) {
-					printf("Error: %s needs one argument, ie: %s terrain.png\n", option, option);
-					exit(1);
+					throw std::runtime_error("Error: " + std::string(option) + "%s needs one argument, ie: " + std::string(option) + "%s terrain.png\n");
 				}
 				texturefile = NEXTARG;
 			} else if (strcmp(option, "-info") == 0) {
 				if (!MOREARGS(1)) {
-					printf("Error: %s needs one argument, ie: %s data.json\n", option, option);
-					exit(1);
+					throw std::runtime_error("Error: " + std::string(option) + "%s needs one argument, ie: " + std::string(option) + "%s data.json\n");
 				}
 				infoFile = NEXTARG;
 			} else if (strcmp(option, "-infoonly") == 0) {
@@ -773,8 +748,7 @@ options parseArgs(int argc, char** argv) {
 				g_OffsetY = 3;
 			} else if (strcmp(option, "-split") == 0) {
 				if (!MOREARGS(1)) {
-					printf("Error: %s needs a path argument, ie: %s tiles/\n", option, option);
-					exit(1);
+					throw std::runtime_error("Error: " + std::string(option) + "%s needs a path argument, ie: " + std::string(option) + "%s tiles/\n");
 				}
 				g_TilePath = NEXTARG;
 			} else if (strcmp(option, "-help") == 0 || strcmp(option, "-h") == 0 || strcmp(option, "-?") == 0) {
@@ -786,8 +760,7 @@ options parseArgs(int argc, char** argv) {
 					continue;
 				}
 				if (!MOREARGS(3) || !isNumeric(POLLARG(2)) || !isNumeric(POLLARG(3))) {
-					printf("Error: %s needs a char and two integer arguments, ie: %s r -15 240\n", option, option);
-					exit(1);
+					throw std::runtime_error("Error: " + std::string(option) + "%s needs a char and two integer arguments, ie: " + std::string(option) + "%s r -15 240\n");
 				}
 				Marker &marker = g_Markers[g_MarkerCount];
 				switch (*NEXTARG) {
@@ -812,8 +785,7 @@ options parseArgs(int argc, char** argv) {
 				g_MarkerCount++;
             } else if (strcmp(option, "-mystcraftage") == 0) {
                 if (!MOREARGS(1)) {
-					printf("Error: %s needs an integer age number argument", option);
-					exit(1);
+					throw std::runtime_error("Error: " + std::string(option) + "%s needs an integer age number argument");
                 }
                 g_MystCraftAge = atoi(NEXTARG);
 			} else {
